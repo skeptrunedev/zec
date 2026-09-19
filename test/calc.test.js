@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { estimate, blocksToHalving, BLOCKS_PER_DAY, Z15_PRO } from "../public/calc.js";
+import { estimate, blocksToHalving, compareToStocks, BLOCKS_PER_DAY, Z15_PRO } from "../public/calc.js";
 
 const base = {
   hashrateSol: Z15_PRO.hashrateKsol * 1e3,
@@ -55,4 +55,23 @@ test("rental cost comes out of profit and moves break-evens", () => {
   assert.ok(Math.abs(r.profitPerDay - (60.528 * 2 - 20)) < 1e-6);
   assert.ok(Math.abs(estimate({ ...base, units: 2, rentalUsdPerMonth: 300, electricityUsdKwh: r.breakevenElectricity }).profitPerDay) < 1e-9);
   assert.ok(Math.abs(estimate({ ...base, units: 2, rentalUsdPerMonth: 300, priceUsd: r.breakevenPriceUsd }).profitPerDay) < 1e-9);
+});
+
+test("pool fee is split out in dollars", () => {
+  const r = estimate({ ...base, poolFeePct: 1 });
+  assert.ok(Math.abs(r.poolFeePerDay - 0.672) < 1e-9);
+  assert.ok(Math.abs(r.periods[2].grossRevenue - r.periods[2].revenue - r.periods[2].poolFee) < 1e-9);
+});
+
+test("stock comparison compounds the same cash flows", () => {
+  // Lump sum only: $1000 at 12%/yr for 12 months is exactly $1120.
+  const lump = compareToStocks({ upfrontUsd: 1000, monthlyCostUsd: 0, monthlyRevenueUsd: 0, months: 12, annualReturnPct: 12 });
+  assert.ok(Math.abs(lump.stocks.endValue - 1120) < 1e-6);
+  assert.equal(lump.mining.gain, -1000);
+
+  // Zero return: stocks just hold the cash; mining gain is revenue minus costs.
+  const flat = compareToStocks({ upfrontUsd: 0, monthlyCostUsd: 390, monthlyRevenueUsd: 2000, months: 12, annualReturnPct: 0 });
+  assert.equal(flat.cashIn, 4680);
+  assert.ok(Math.abs(flat.stocks.gain) < 1e-9);
+  assert.equal(flat.mining.gain, 2000 * 12 - 4680);
 });

@@ -84,6 +84,10 @@
   td { text-align: right; padding: 9px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; font-family: inherit; }
   tr:last-child td { border-bottom: 0; }
+  h3.sub { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 26px 0 6px; }
+  .ledger td:first-child { color: var(--muted); }
+  .ledger small { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .ledger tr.total td { border-top: 1px solid var(--ink); font-weight: 500; color: var(--ink); }
   .note { color: var(--muted); font-size: 13px; margin: 16px 0 0; }
   .note b { color: var(--ink); font-weight: 500; }
   .status { font-size: 13px; color: var(--muted); margin-top: 14px; }
@@ -117,24 +121,41 @@
         <div class="field"><label for="price">ZEC price<small>USD <span class="live" data-for="price"></span></small></label><input id="price" type="number" step="any" min="0"></div>
         <div class="field"><label for="network">Network hashrate<small>GSol/s, from difficulty <span class="live" data-for="network"></span></small></label><input id="network" type="number" step="any" min="0"></div>
       </div>
+      <div class="section">
+        <h2>Compare to stocks</h2>
+        <div class="field"><label for="months">Time horizon<small>months</small></label><input id="months" type="number" step="1" min="1"></div>
+        <div class="field"><label for="stockReturn">Stock return<small>% per year</small></label><input id="stockReturn" type="number" step="0.5"></div>
+      </div>
     </form>
 
     <section class="panel" aria-live="polite">
       <div class="hero">
-        <div><div class="label">Profit per day</div><div class="big" id="profitDay">—</div></div>
-        <div><div class="label">Profit per month</div><div class="big" id="profitMonth" style="font-size:28px">—</div></div>
+        <div><div class="label">Profit per month</div><div class="big" id="profitMonth">—</div></div>
+        <div><div class="label">Profit per day</div><div class="big" id="profitDay" style="font-size:28px">—</div></div>
       </div>
       <div class="kpis">
         <div class="kpi"><div class="label">Break-even power</div><div class="value" id="beElec">—</div></div>
         <div class="kpi"><div class="label">Break-even ZEC</div><div class="value" id="bePrice">—</div></div>
         <div class="kpi"><div class="label">Payback</div><div class="value" id="payback">—</div></div>
       </div>
+      <h3 class="sub">Every month</h3>
+      <table class="ledger"><tbody id="monthly"></tbody></table>
+
+      <h3 class="sub">All periods</h3>
       <div class="tablewrap">
         <table>
           <thead><tr><th>Period</th><th>ZEC mined</th><th>Revenue</th><th>Power</th><th>Rental</th><th>Profit</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
+      <h3 class="sub" id="stocksTitle">vs. the stock market</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th></th><th>Mine ZEC</th><th>Index fund</th></tr></thead>
+          <tbody id="stocks"></tbody>
+        </table>
+      </div>
+      <p class="note" id="stocksNote"></p>
       <p class="note" id="poolCheck"></p>
       <p class="note" id="halving"></p>
       <p class="note">Assumes 75s blocks (1,152/day) and a 1.25 ZEC miner reward per block. The other 20% of the 1.5625 ZEC subsidy goes to the dev fund. Transaction fees add a little on top and aren't counted. Network hashrate is what difficulty implies, which is what pools pay against. Pool dashboards show a lower figure (about 7% lower); don't paste theirs in here or earnings come out too high. Real payouts vary with luck and difficulty. If your rental price already includes power, set electricity to 0.</p>
@@ -146,7 +167,7 @@
 </main>
 
 <script type="module">
-  import { estimate, blocksToHalving, Z15_PRO, MINER_REWARD_ZEC } from "/calc.js";
+  import { estimate, compareToStocks, blocksToHalving, Z15_PRO, MINER_REWARD_ZEC, DAYS_PER_MONTH } from "/calc.js";
 
   const $ = (id) => document.getElementById(id);
   const usd = (v, digits = 2) =>
@@ -154,7 +175,7 @@
   const zec = (v) => v.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   const signClass = (v) => (v >= 0 ? "pos" : "neg");
 
-  const defaults = { hashrate: Z15_PRO.hashrateKsol, power: Z15_PRO.powerW, units: 1, electricity: 0.10, poolFee: 1 };
+  const defaults = { hashrate: Z15_PRO.hashrateKsol, power: Z15_PRO.powerW, units: 1, electricity: 0.10, poolFee: 1, months: 12, stockReturn: 10 };
   for (const [id, v] of Object.entries(defaults)) $(id).value = v;
 
   let live = null;
@@ -210,6 +231,34 @@
     $("payback").textContent = r.paybackDays === null
       ? (num("hardware") > 0 ? "never" : "—")
       : Math.ceil(r.paybackDays).toLocaleString("en-US") + " days";
+
+    const units = Math.max(1, Math.round(num("units")));
+    const month = r.periods[2];
+    const kwhMonth = r.kwhPerDay * DAYS_PER_MONTH;
+    const line = (label, v, note = "") => `<tr><td>${label}${note ? `<small>${note}</small>` : ""}</td><td>${usd(v)}</td></tr>`;
+    $("monthly").innerHTML =
+      line("Mining revenue", month.grossRevenue, `${zec(month.zec / (1 - num("poolFee") / 100))} ZEC`) +
+      line("Pool fee", -month.poolFee, `${num("poolFee")}%`) +
+      line("Power", -month.power, `${Math.round(kwhMonth).toLocaleString("en-US")} kWh × ${usd(num("electricity"), 3)}`) +
+      line("Rental / hosting", -month.rental, `${units} × ${usd(num("rental"))}`) +
+      `<tr class="total"><td>Profit</td><td class="${signClass(month.profit)}">${usd(month.profit)}</td></tr>`;
+
+    const months = Math.max(1, Math.round(num("months")));
+    const c = compareToStocks({
+      upfrontUsd: num("hardware") * units,
+      monthlyCostUsd: month.power + month.rental,
+      monthlyRevenueUsd: month.revenue,
+      months,
+      annualReturnPct: num("stockReturn"),
+    });
+    const pct = (gain) => c.cashIn > 0 ? ` <small>(${(gain / c.cashIn * 100).toFixed(0)}%)</small>` : "";
+    $("stocksTitle").textContent = `vs. the stock market, ${months} months`;
+    $("stocks").innerHTML = `
+      <tr><td>Cash you put in</td><td>${usd(c.cashIn, 0)}</td><td>${usd(c.cashIn, 0)}</td></tr>
+      <tr><td>Worth at the end</td><td>${usd(c.mining.endValue, 0)}</td><td>${usd(c.stocks.endValue, 0)}</td></tr>
+      <tr><td>Gain</td><td class="${signClass(c.mining.gain)}">${usd(c.mining.gain, 0)}${pct(c.mining.gain)}</td><td class="${signClass(c.stocks.gain)}">${usd(c.stocks.gain, 0)}${pct(c.stocks.gain)}</td></tr>`;
+    const diff = c.mining.gain - c.stocks.gain;
+    $("stocksNote").innerHTML = `<b>${diff >= 0 ? "Mining comes out ahead" : "Stocks come out ahead"} by ${usd(Math.abs(diff), 0)}.</b> The index fund gets the same cash on the same schedule: ${num("hardware") > 0 ? "the hardware cost up front, plus " : ""}each month's power and rental. It grows at ${num("stockReturn")}% a year (about the S&amp;P 500's long-run average with dividends reinvested). Mining assumes today's ZEC price and difficulty hold, with ZEC sold as it's mined${num("hardware") > 0 ? " and no resale value for the hardware" : ""}.`;
 
     $("rows").innerHTML = r.periods.map((p) => `
       <tr>

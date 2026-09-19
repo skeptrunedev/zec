@@ -36,8 +36,10 @@ export function estimate({
   minerRewardZec = MINER_REWARD_ZEC,
 }) {
   const share = (hashrateSol * units) / networkSol;
-  const zecPerDay = share * BLOCKS_PER_DAY * minerRewardZec * (1 - poolFeePct / 100);
+  const grossZecPerDay = share * BLOCKS_PER_DAY * minerRewardZec;
+  const zecPerDay = grossZecPerDay * (1 - poolFeePct / 100);
   const revenuePerDay = zecPerDay * priceUsd;
+  const poolFeePerDay = (grossZecPerDay - zecPerDay) * priceUsd;
   const kwhPerDay = (powerW * units * 24) / 1000;
   const powerCostPerDay = kwhPerDay * electricityUsdKwh;
   const rentalCostPerDay = (rentalUsdPerMonth / DAYS_PER_MONTH) * units;
@@ -48,6 +50,8 @@ export function estimate({
     share,
     zecPerDay,
     revenuePerDay,
+    poolFeePerDay,
+    kwhPerDay,
     powerCostPerDay,
     rentalCostPerDay,
     profitPerDay,
@@ -57,6 +61,8 @@ export function estimate({
     periods: PERIODS.map(({ label, days }) => ({
       label,
       zec: zecPerDay * days,
+      grossRevenue: (revenuePerDay + poolFeePerDay) * days,
+      poolFee: poolFeePerDay * days,
       revenue: revenuePerDay * days,
       power: powerCostPerDay * days,
       rental: rentalCostPerDay * days,
@@ -67,4 +73,23 @@ export function estimate({
 
 export function blocksToHalving(height) {
   return Math.max(0, NEXT_HALVING_HEIGHT - height);
+}
+
+// What the same cash would do in an index fund. Mining cash in is the hardware
+// up front plus each month's running costs; the stock side invests exactly those
+// amounts on the same schedule (start of each month) at a fixed annual return.
+// Mined ZEC is assumed sold at today's price as it comes in.
+export function compareToStocks({ upfrontUsd, monthlyCostUsd, monthlyRevenueUsd, months, annualReturnPct }) {
+  const monthlyRate = Math.pow(1 + annualReturnPct / 100, 1 / 12) - 1;
+  const cashIn = upfrontUsd + monthlyCostUsd * months;
+
+  let stockValue = upfrontUsd;
+  for (let m = 0; m < months; m++) stockValue = (stockValue + monthlyCostUsd) * (1 + monthlyRate);
+
+  const miningValue = monthlyRevenueUsd * months;
+  return {
+    cashIn,
+    mining: { endValue: miningValue, gain: miningValue - cashIn },
+    stocks: { endValue: stockValue, gain: stockValue - cashIn },
+  };
 }
