@@ -51,6 +51,7 @@
   header p { margin: 0; color: var(--muted); }
   .grid { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
   @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .grid > * { min-width: 0; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
   .panel h2 { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
   .panel h2 + .field { margin-top: 0; }
@@ -162,19 +163,21 @@
     return Number.isFinite(v) ? v : 0;
   }
 
+  // Fields prefilled from live data; true once the user types over them.
+  const edited = { price: false, network: false };
+
   function renderLiveBadges() {
     for (const el of document.querySelectorAll(".live")) {
-      if (!live) { el.textContent = ""; continue; }
       const id = el.dataset.for;
-      const liveValue = id === "price" ? live.priceUsd : live.networkSolPerSec / 1e9;
-      const edited = Math.abs(num(id) - liveValue) > 1e-9 * Math.max(1, liveValue);
-      el.innerHTML = edited ? '· <button type="button">reset to live</button>' : "· live";
+      if (!live) { el.textContent = ""; continue; }
+      el.innerHTML = edited[id] ? '· <button type="button">reset to live</button>' : "· live";
       const btn = el.querySelector("button");
       if (btn) btn.onclick = () => { setLive(id); render(); };
     }
   }
 
   function setLive(id) {
+    edited[id] = false;
     if (id === "price") $("price").value = +live.priceUsd.toFixed(2);
     if (id === "network") $("network").value = +(live.networkSolPerSec / 1e9).toFixed(4);
   }
@@ -245,7 +248,10 @@
     render();
   }
 
-  $("inputs").addEventListener("input", render);
+  $("inputs").addEventListener("input", (e) => {
+    if (e.target.id in edited) edited[e.target.id] = true;
+    render();
+  });
   loadLive();
 </script>
 </body>
