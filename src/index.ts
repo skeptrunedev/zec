@@ -1,8 +1,10 @@
 // Live Zcash network stats for the calculator page.
 //
 // Network hashrate comes from Blockchair (24h average, sol/s). Price comes from
-// CoinGecko, with Blockchair's own market price as the second source. Both are
-// fetched server-side so the page has one same-origin, cached endpoint.
+// CoinGecko, with Blockchair's own market price as the second source. ViaBTC's
+// published payout per kSol/s is fetched as an independent cross-check of the
+// page's math. All are fetched server-side so the page has one same-origin,
+// cached endpoint.
 
 interface Env {
   ASSETS: Fetcher;
@@ -14,6 +16,8 @@ export interface Stats {
   networkSolPerSec: number;
   difficulty: number;
   height: number;
+  // ViaBTC's expected ZEC per kSol/s per day, after its pool fee. Null if unavailable.
+  poolZecPerKsolDay: number | null;
   fetchedAt: string;
 }
 
@@ -28,6 +32,10 @@ interface BlockchairStats {
   };
 }
 
+interface ViaBtcState {
+  data?: { unit_output?: string; hash_unit?: string };
+}
+
 interface CoinGeckoPrice {
   zcash?: { usd?: number };
 }
@@ -39,9 +47,10 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 async function loadStats(): Promise<Stats> {
-  const [chain, gecko] = await Promise.allSettled([
+  const [chain, gecko, viabtc] = await Promise.allSettled([
     getJson<BlockchairStats>("https://api.blockchair.com/zcash/stats"),
     getJson<CoinGeckoPrice>("https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd"),
+    getJson<ViaBtcState>("https://www.viabtc.com/res/pool/ZEC/state"),
   ]);
   if (chain.status === "rejected") throw chain.reason;
 
@@ -53,12 +62,16 @@ async function loadStats(): Promise<Stats> {
   const priceUsd = geckoPrice ?? d.market_price_usd;
   if (!(priceUsd > 0)) throw new Error("no ZEC price available");
 
+  const via = viabtc.status === "fulfilled" ? viabtc.value.data : undefined;
+  const poolZecPerKsolDay = via?.hash_unit === "KSol/s" ? Number(via.unit_output) : NaN;
+
   return {
     priceUsd,
     priceSource: geckoPrice ? "coingecko" : "blockchair",
     networkSolPerSec,
     difficulty: d.difficulty,
     height: d.best_block_height,
+    poolZecPerKsolDay: poolZecPerKsolDay > 0 ? poolZecPerKsolDay : null,
     fetchedAt: new Date().toISOString(),
   };
 }

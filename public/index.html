@@ -115,7 +115,7 @@
       <div class="section">
         <h2>Network</h2>
         <div class="field"><label for="price">ZEC price<small>USD <span class="live" data-for="price"></span></small></label><input id="price" type="number" step="any" min="0"></div>
-        <div class="field"><label for="network">Network hashrate<small>GSol/s, 24h avg <span class="live" data-for="network"></span></small></label><input id="network" type="number" step="any" min="0"></div>
+        <div class="field"><label for="network">Network hashrate<small>GSol/s, from difficulty <span class="live" data-for="network"></span></small></label><input id="network" type="number" step="any" min="0"></div>
       </div>
     </form>
 
@@ -135,8 +135,9 @@
           <tbody id="rows"></tbody>
         </table>
       </div>
+      <p class="note" id="poolCheck"></p>
       <p class="note" id="halving"></p>
-      <p class="note">Assumes 75s blocks (1,152/day) and a 1.25 ZEC miner reward per block. The other 20% of the 1.5625 ZEC subsidy goes to the dev fund. Transaction fees add a little on top and aren't counted. Real payouts vary with luck and difficulty. If your rental price already includes power, set electricity to 0.</p>
+      <p class="note">Assumes 75s blocks (1,152/day) and a 1.25 ZEC miner reward per block. The other 20% of the 1.5625 ZEC subsidy goes to the dev fund. Transaction fees add a little on top and aren't counted. Network hashrate is what difficulty implies, which is what pools pay against. Pool dashboards show a lower figure (about 7% lower); don't paste theirs in here or earnings come out too high. Real payouts vary with luck and difficulty. If your rental price already includes power, set electricity to 0.</p>
       <div class="status" id="status">Loading live network data…</div>
     </section>
   </div>
@@ -219,6 +220,11 @@
         <td>${usd(-p.rental)}</td>
         <td class="${signClass(p.profit)}">${usd(p.profit)}</td>
       </tr>`).join("");
+
+    const hashrateKsol = num("hashrate") * Math.max(1, Math.round(num("units")));
+    $("poolCheck").innerHTML = live?.poolZecPerKsolDay && hashrateKsol > 0
+      ? `<b>Pool check:</b> ViaBTC's published payout for ${hashrateKsol.toLocaleString("en-US")} kSol/s is ${zec(live.poolZecPerKsolDay * hashrateKsol)} ZEC/day after its fee. This calculator says ${zec(r.zecPerDay)} at your ${num("poolFee")}% pool fee.`
+      : "";
 
     if (live) {
       const blocks = blocksToHalving(live.height);
