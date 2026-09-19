@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Z15 Fleet Monitor</title>
+<meta name="description" content="Pool-side check of every Z15 Pro against spec: hashrate per machine, offline and missing machines, and payouts.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='15' fill='%23f4b728'/><path d='M10 9h12v3l-8 8h8v3H10v-3l8-8h-8z' fill='%231a1408'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>
+  .field.wide { grid-template-columns: 1fr; }
+  .field.wide input { text-align: left; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 99px; }
+  .badge.ok { background: color-mix(in srgb, var(--pos) 16%, transparent); color: var(--pos); }
+  .badge.low { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+  .badge.offline { background: color-mix(in srgb, var(--neg) 16%, transparent); color: var(--neg); }
+  .empty { color: var(--muted); padding: 24px 0 8px; }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="/">Calculator</a><a href="/watch" aria-current="page">Fleet monitor</a></nav>
+  <header>
+    <div class="eyebrow">Pool-side check · 2Miners</div>
+    <h1>Fleet monitor</h1>
+    <p>What your pool actually receives from each machine. This is the number to trust, not the machines' own dashboards.</p>
+  </header>
+
+  <div class="grid">
+    <form class="panel" id="inputs" autocomplete="off">
+      <div class="section">
+        <h2>Your pool account</h2>
+        <div class="field wide"><label for="address">Payout address<small>t1… address the miners use as their worker name</small></label><input id="address" type="text" spellcheck="false" placeholder="t1…"></div>
+      </div>
+      <div class="section">
+        <h2>What you're paying for</h2>
+        <div class="field"><label for="machines">Machines</label><input id="machines" type="number" step="1" min="1"></div>
+        <div class="field"><label for="spec">Spec hashrate<small>kSol/s per machine</small></label><input id="spec" type="number" step="any" min="0"></div>
+        <div class="field"><label for="minimum">Flag below<small>kSol/s, pool-side average</small></label><input id="minimum" type="number" step="any" min="0"></div>
+      </div>
+    </form>
+
+    <section class="panel" aria-live="polite">
+      <div class="hero">
+        <div><div class="label">Fleet hashrate (pool average)</div><div class="big" id="total">—</div></div>
+        <div><div class="label">of expected</div><div class="big" id="pct" style="font-size:28px">—</div></div>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="label">Healthy</div><div class="value" id="nOk">—</div></div>
+        <div class="kpi"><div class="label">Below spec</div><div class="value" id="nLow">—</div></div>
+        <div class="kpi"><div class="label">Offline</div><div class="value" id="nOff">—</div></div>
+        <div class="kpi"><div class="label">Never seen</div><div class="value" id="nMissing">—</div></div>
+        <div class="kpi"><div class="label">Earned, last 24h</div><div class="value" id="earned">—</div></div>
+        <div class="kpi"><div class="label">Expected per 24h</div><div class="value" id="expected">—</div></div>
+      </div>
+
+      <h3 class="sub">Machines</h3>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Worker</th><th>Average</th><th>Now</th><th>vs spec</th><th>Status</th></tr></thead>
+          <tbody id="workers"></tbody>
+        </table>
+      </div>
+
+      <h3 class="sub">Money</h3>
+      <table class="ledger"><tbody id="money"></tbody></table>
+
+      <p class="note">Pool-side hashrate is estimated from submitted shares, so short windows swing ±10% or more. Machines are judged on the longer average. "Earned, last 24h" follows pool luck (2Miners is PPLNS), so read it over several days. "Expected" is for the hashrate the pool measured, at today's difficulty and 1.25 ZEC per block, minus the 1% pool fee.</p>
+      <div class="status" id="status">Enter your payout address to start.</div>
+    </section>
+  </div>
+
+  <footer><a href="https://github.com/skeptrunedev/zec">Source (MIT)</a> · Data: <a href="https://zec.2miners.com">2Miners</a> (your account), <a href="https://blockchair.com/zcash">Blockchair</a> (network). Refreshes every minute.</footer>
+</main>
+
+<script type="module">
+  import { fleetHealth, STATUS } from "/fleet.js";
+  import { estimate, Z15_PRO } from "/calc.js";
+
+  const $ = (id) => document.getElementById(id);
+  const fields = ["address", "machines", "spec", "minimum"];
+  const defaults = { address: "", machines: 124, spec: Z15_PRO.hashrateKsol, minimum: 815 };
+  const REFRESH_MS = 60_000;
+  const POOL_FEE_PCT = 1;
+
+  const ksol = (sol) => (sol / 1e3).toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const msol = (sol) => (sol / 1e6).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " MSol/s";
+  const zec = (v, d = 4) => v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }) + " ZEC";
+  const usd = (v) => "$" + v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const ago = (unixSeconds) => {
+    const s = Math.max(0, Date.now() / 1000 - unixSeconds);
+    if (s < 90) return `${Math.round(s)}s ago`;
+    if (s < 5400) return `${Math.round(s / 60)}m ago`;
+    return `${Math.round(s / 3600)}h ago`;
+  };
+  const escape = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  // Settings live in the URL so a monitor link can be bookmarked or shared;
+  // the last-used address is also remembered in this browser.
+  const params = new URLSearchParams(location.search);
+  let remembered = "";
+  try { remembered = localStorage.getItem("zec.address") || ""; } catch {}
+  for (const id of fields) $(id).value = params.get(id) ?? (id === "address" ? remembered : defaults[id]);
+
+  function num(id) {
+    const v = parseFloat($(id).value);
+    return Number.isFinite(v) ? v : 0;
+  }
+
+  function syncUrl() {
+    const q = new URLSearchParams();
+    for (const id of fields) if (String($(id).value) !== String(defaults[id])) q.set(id, $(id).value.trim());
+    history.replaceState(null, "", q.toString() ? `?${q}` : location.pathname);
+    try { localStorage.setItem("zec.address", $("address").value.trim()); } catch {}
+  }
+
+  let stats = null;
+  let account = null;
+
+  async function getJson(url) {
+    const res = await fetch(url);
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+    return body;
+  }
+
+  function render() {
+    if (!account) return;
+    const machines = Math.max(1, Math.round(num("machines")));
+    const perMachine = num("spec") * 1e3;
+    const h = fleetHealth(account, { expectedMachines: machines, perMachineSolPerSec: perMachine, minSolPerSec: num("minimum") * 1e3 });
+
+    $("total").textContent = msol(account.averageSolPerSec);
+    $("pct").textContent = Math.round(h.pctOfExpected * 100) + "%";
+    $("pct").className = "big " + (h.pctOfExpected >= num("minimum") / num("spec") ? "pos" : "neg");
+    $("nOk").textContent = h.ok;
+    $("nLow").textContent = h.low;
+    $("nOff").textContent = h.offline;
+    $("nMissing").textContent = h.missing;
+    $("earned").textContent = zec(account.reward24hZec);
+
+    let expected = null;
+    if (stats) {
+      expected = estimate({
+        hashrateSol: account.averageSolPerSec, powerW: 0, electricityUsdKwh: 0,
+        poolFeePct: POOL_FEE_PCT, priceUsd: stats.priceUsd, networkSol: stats.networkSolPerSec,
+      });
+      $("expected").textContent = zec(expected.zecPerDay);
+    }
+
+    $("workers").innerHTML = h.workers.length
+      ? h.workers.map((w) => `
+        <tr>
+          <td>${escape(w.name)}</td>
+          <td>${ksol(w.averageSolPerSec)}k</td>
+          <td>${w.offline ? `<small>${ago(w.lastBeat)}</small>` : ksol(w.currentSolPerSec) + "k"}</td>
+          <td class="${w.status === STATUS.OK ? "pos" : "neg"}">${Math.round(w.pctOfSpec * 100)}%</td>
+          <td><span class="badge ${w.status}">${w.status}</span></td>
+        </tr>`).join("")
+      : `<tr><td colspan="5" class="empty">No workers yet. Once a machine points at this address it appears within a few minutes.</td></tr>`;
+
+    const price = stats?.priceUsd;
+    const withUsd = (v) => price ? `${zec(v)} <small>${usd(v * price)}</small>` : zec(v);
+    const lastPayment = account.payments[0];
+    $("money").innerHTML = [
+      ["Balance, waiting for payout", withUsd(account.balanceZec)],
+      ["Immature (recent blocks)", withUsd(account.immatureZec)],
+      ["Paid out to your wallet, total", withUsd(account.paidZec)],
+      ["Last payout", lastPayment
+        ? `${zec(lastPayment.zec)} <small>${new Date(lastPayment.timestamp * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · <a href="https://blockchair.com/zcash/transaction/${lastPayment.tx}">tx</a></small>`
+        : "none yet"],
+    ].map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join("");
+  }
+
+  async function refresh() {
+    const address = $("address").value.trim();
+    const status = $("status");
+    if (!address) { status.className = "status"; status.textContent = "Enter your payout address to start."; return; }
+    try {
+      [account, stats] = await Promise.all([
+        getJson(`/api/pool/${encodeURIComponent(address)}`),
+        getJson("/api/stats").catch(() => stats),
+      ]);
+      status.className = "status";
+      status.textContent = `2Miners data from ${new Date(account.updatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${account.workersOnline} online, ${account.workersOffline} offline`;
+    } catch (err) {
+      account = null;
+      status.className = "status err";
+      status.textContent = `Couldn't load that account: ${err.message}`;
+    }
+    render();
+  }
+
+  let debounce;
+  $("inputs").addEventListener("input", (e) => {
+    syncUrl();
+    if (e.target.id === "address") { clearTimeout(debounce); debounce = setTimeout(refresh, 400); }
+    else render();
+  });
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

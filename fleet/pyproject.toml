@@ -1,0 +1,22 @@
+[project]
+name = "zec-fleet"
+version = "0.1.0"
+description = "Find, audit, and repoint a hosted fleet of Antminer Z15 Pros"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "pyasic==0.79.0",
+  # pyasic pins this pre-release; naming it here lets uv accept it without
+  # allowing pre-releases for everything else.
+  "betterproto==2.0.0b7",
+]
+
+[project.scripts]
+zec-fleet = "zec_fleet.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
