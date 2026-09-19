@@ -49,9 +49,10 @@ test("halving countdown", () => {
 });
 
 test("rental cost comes out of profit and moves break-evens", () => {
-  const r = estimate({ ...base, units: 2, rentalUsdPerDay: 10 });
+  const r = estimate({ ...base, units: 2, rentalUsdPerMonth: 300 });
   assert.ok(Math.abs(r.rentalCostPerDay - 20) < 1e-9);
+  assert.ok(Math.abs(r.periods[2].rental - 600) < 1e-9);
   assert.ok(Math.abs(r.profitPerDay - (60.528 * 2 - 20)) < 1e-6);
-  assert.ok(Math.abs(estimate({ ...base, units: 2, rentalUsdPerDay: 10, electricityUsdKwh: r.breakevenElectricity }).profitPerDay) < 1e-9);
-  assert.ok(Math.abs(estimate({ ...base, units: 2, rentalUsdPerDay: 10, priceUsd: r.breakevenPriceUsd }).profitPerDay) < 1e-9);
+  assert.ok(Math.abs(estimate({ ...base, units: 2, rentalUsdPerMonth: 300, electricityUsdKwh: r.breakevenElectricity }).profitPerDay) < 1e-9);
+  assert.ok(Math.abs(estimate({ ...base, units: 2, rentalUsdPerMonth: 300, priceUsd: r.breakevenPriceUsd }).profitPerDay) < 1e-9);
 });

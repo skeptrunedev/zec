@@ -109,7 +109,7 @@
         <div class="field"><label for="units">Units</label><input id="units" type="number" step="1" min="1"></div>
         <div class="field"><label for="electricity">Electricity<small>$ per kWh</small></label><input id="electricity" type="number" step="0.01" min="0"></div>
         <div class="field"><label for="poolFee">Pool fee<small>%</small></label><input id="poolFee" type="number" step="0.1" min="0" max="100"></div>
-        <div class="field"><label for="rental">Rental / hosting<small>$ per unit per day, optional</small></label><input id="rental" type="number" step="any" min="0" placeholder="—"></div>
+        <div class="field"><label for="rental">Rental / hosting<small>$ per machine per month, optional</small></label><input id="rental" type="number" step="any" min="0" placeholder="—"></div>
         <div class="field"><label for="hardware">Hardware cost<small>$ per unit, optional</small></label><input id="hardware" type="number" step="any" min="0" placeholder="—"></div>
       </div>
       <div class="section">
@@ -197,7 +197,7 @@
       priceUsd,
       networkSol,
       hardwareUsd: num("hardware"),
-      rentalUsdPerDay: num("rental"),
+      rentalUsdPerMonth: num("rental"),
     });
 
     $("profitDay").textContent = usd(r.profitPerDay);

@@ -13,10 +13,13 @@ export const NEXT_HALVING_HEIGHT = 4_406_400;
 
 export const Z15_PRO = { name: "Antminer Z15 Pro", hashrateKsol: 840, powerW: 2780 };
 
+// A "month" is 30 days everywhere: the Month row, and monthly rental.
+export const DAYS_PER_MONTH = 30;
+
 export const PERIODS = [
   { label: "Day", days: 1 },
   { label: "Week", days: 7 },
-  { label: "Month", days: 30 },
+  { label: "Month", days: DAYS_PER_MONTH },
   { label: "Year", days: 365 },
 ];
 
@@ -29,7 +32,7 @@ export function estimate({
   priceUsd,
   networkSol,
   hardwareUsd = 0,
-  rentalUsdPerDay = 0,
+  rentalUsdPerMonth = 0,
   minerRewardZec = MINER_REWARD_ZEC,
 }) {
   const share = (hashrateSol * units) / networkSol;
@@ -37,7 +40,7 @@ export function estimate({
   const revenuePerDay = zecPerDay * priceUsd;
   const kwhPerDay = (powerW * units * 24) / 1000;
   const powerCostPerDay = kwhPerDay * electricityUsdKwh;
-  const rentalCostPerDay = rentalUsdPerDay * units;
+  const rentalCostPerDay = (rentalUsdPerMonth / DAYS_PER_MONTH) * units;
   const profitPerDay = revenuePerDay - powerCostPerDay - rentalCostPerDay;
   const totalHardware = hardwareUsd * units;
 
