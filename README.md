@@ -13,3 +13,5 @@ npm test        # calc tests
 ```
 
 Pushes to `main` deploy via GitHub Actions.
+
+MIT licensed.
